@@ -32,8 +32,55 @@ pipeline:
                   spec:
                     shell: Sh
                     command: |-
-                      git clone https://<+secrets.getValue("your-git-token")>@github.com/your-org/your-repo.git
+                      set -euo pipefail
 
-                      cd cd-samples
-                      echo "Printing README.md:"
-                      cat README.md
+                      # --- Configuration ---
+                      REPO_URL="https://github.com/your-org/your-repo.git"
+                      TARGET_DIR="your-repo"
+                      FILE_TO_READ="README.md"
+
+                      # --- Validate inputs ---
+                      GIT_TOKEN="<+secrets.getValue("your-git-token")>"
+                      if [ -z "${GIT_TOKEN}" ]; then
+                        echo "ERROR: Git token secret 'your-git-token' is empty or not configured." >&2
+                        echo "Please create a Harness secret named 'your-git-token' with a valid Git personal access token." >&2
+                        exit 1
+                      fi
+
+                      if [ -z "${REPO_URL}" ]; then
+                        echo "ERROR: Repository URL is not set." >&2
+                        exit 1
+                      fi
+
+                      # --- Clone repository ---
+                      echo "Cloning repository: ${REPO_URL}"
+                      if ! git clone "https://${GIT_TOKEN}@${REPO_URL#https://}" ; then
+                        echo "ERROR: Failed to clone repository '${REPO_URL}'." >&2
+                        echo "Possible causes:" >&2
+                        echo "  - Invalid or expired Git token" >&2
+                        echo "  - Incorrect repository URL" >&2
+                        echo "  - Insufficient token permissions (needs repo read access)" >&2
+                        echo "  - Network connectivity issues" >&2
+                        exit 1
+                      fi
+                      echo "Repository cloned successfully."
+
+                      # --- Navigate to cloned directory ---
+                      if [ ! -d "${TARGET_DIR}" ]; then
+                        echo "ERROR: Expected directory '${TARGET_DIR}' not found after clone." >&2
+                        echo "Verify that TARGET_DIR matches the repository name." >&2
+                        ls -la
+                        exit 1
+                      fi
+                      cd "${TARGET_DIR}"
+                      echo "Changed directory to '${TARGET_DIR}'."
+
+                      # --- Read file from repository ---
+                      if [ ! -f "${FILE_TO_READ}" ]; then
+                        echo "ERROR: File '${FILE_TO_READ}' not found in '${TARGET_DIR}'." >&2
+                        echo "Available files:" >&2
+                        ls -la >&2
+                        exit 1
+                      fi
+                      echo "Printing ${FILE_TO_READ}:"
+                      cat "${FILE_TO_READ}"
